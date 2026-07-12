@@ -213,5 +213,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             drawingView.finishCurrentStroke()
             overlay.hide()
         }
+        updateStatusIcon(active: down)
+    }
+
+    /// Filled pencil while the overlay is active, plain scribble otherwise.
+    private func updateStatusIcon(active: Bool) {
+        statusItem.button?.image = NSImage(
+            systemSymbolName: active ? "pencil.tip.crop.circle.fill" : "scribble.variable",
+            accessibilityDescription: "Dooodle")
     }
 }

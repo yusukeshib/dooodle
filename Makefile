@@ -13,9 +13,10 @@ build:
 
 bundle: build
 	rm -rf $(APP)
-	mkdir -p $(APP)/Contents/MacOS
+	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cp Info.plist $(APP)/Contents/
 	cp $(BIN) $(APP)/Contents/MacOS/
+	cp Resources/AppIcon.icns $(APP)/Contents/Resources/
 	codesign --force --sign "$(SIGN_IDENTITY)" $(APP)
 
 run: bundle
