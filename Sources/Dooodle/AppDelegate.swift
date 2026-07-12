@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             widthMenu.addItem(item)
             widthMenuItems.append(item)
         }
-        let widthRoot = NSMenuItem(title: "Width", action: nil, keyEquivalent: "")
+        let widthRoot = NSMenuItem(title: "Thickness", action: nil, keyEquivalent: "")
         widthRoot.image = NSImage(systemSymbolName: "lineweight", accessibilityDescription: nil)
         widthRoot.submenu = widthMenu
         menu.addItem(widthRoot)
