@@ -10,12 +10,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // (label, width)
     private let widths: [(String, Double)] = [
-        ("極細 (2pt)", 2), ("細 (4pt)", 4), ("中 (6pt)", 6), ("太 (10pt)", 10), ("極太 (16pt)", 16),
+        ("Extra Thin (2pt)", 2), ("Thin (4pt)", 4), ("Medium (6pt)", 6), ("Thick (10pt)", 10), ("Extra Thick (16pt)", 16),
     ]
     // (label, hex)
     private let colors: [(String, String)] = [
-        ("レッド", "#FF3B30"), ("オレンジ", "#FF9500"), ("グリーン", "#34C759"),
-        ("ブルー", "#007AFF"), ("ブラック", "#000000"),
+        ("Red", "#FF3B30"), ("Orange", "#FF9500"), ("Green", "#34C759"),
+        ("Blue", "#007AFF"), ("Black", "#000000"),
     ]
 
     private var widthMenuItems: [NSMenuItem] = []
@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             widthMenu.addItem(item)
             widthMenuItems.append(item)
         }
-        let widthRoot = NSMenuItem(title: "太さ", action: nil, keyEquivalent: "")
+        let widthRoot = NSMenuItem(title: "Width", action: nil, keyEquivalent: "")
         widthRoot.submenu = widthMenu
         menu.addItem(widthRoot)
 
@@ -70,24 +70,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             colorMenu.addItem(item)
             colorMenuItems.append(item)
         }
-        let colorRoot = NSMenuItem(title: "色", action: nil, keyEquivalent: "")
+        let colorRoot = NSMenuItem(title: "Color", action: nil, keyEquivalent: "")
         colorRoot.submenu = colorMenu
         menu.addItem(colorRoot)
 
         menu.addItem(.separator())
 
-        let clearItem = NSMenuItem(title: "画面をクリア", action: #selector(clearCanvas), keyEquivalent: "")
+        let clearItem = NSMenuItem(title: "Clear Canvas", action: #selector(clearCanvas), keyEquivalent: "")
         clearItem.target = self
         menu.addItem(clearItem)
 
         menu.addItem(.separator())
 
-        let loginItem = NSMenuItem(title: "起動時に開始", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
+        let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         loginItem.target = self
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
 
-        let quitItem = NSMenuItem(title: "終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
 
         statusItem.menu = menu
@@ -137,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func ensureAccessibility() {
         let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         if !AXIsProcessTrustedWithOptions(opts) {
-            NSLog("Dooodle: waiting for Accessibility permission (システム設定 > プライバシーとセキュリティ > アクセシビリティ)")
+            NSLog("Dooodle: waiting for Accessibility permission (System Settings > Privacy & Security > Accessibility)")
         }
     }
 
