@@ -57,27 +57,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             widthMenuItems.append(item)
         }
         let widthRoot = NSMenuItem(title: "Width", action: nil, keyEquivalent: "")
+        widthRoot.image = NSImage(systemSymbolName: "lineweight", accessibilityDescription: nil)
         widthRoot.submenu = widthMenu
         menu.addItem(widthRoot)
 
-        let colorMenu = NSMenu()
+        menu.addItem(.separator())
+
+        if #available(macOS 14.0, *) {
+            menu.addItem(NSMenuItem.sectionHeader(title: "Color"))
+        }
         for (i, (label, hex)) in colors.enumerated() {
             let item = NSMenuItem(title: label, action: #selector(selectColor(_:)), keyEquivalent: "")
             item.target = self
             item.tag = i
             item.state = i == selectedColor ? .on : .off
             item.image = Self.swatch(NSColor(hex: hex))
-            colorMenu.addItem(item)
+            menu.addItem(item)
             colorMenuItems.append(item)
         }
-        let colorRoot = NSMenuItem(title: "Color", action: nil, keyEquivalent: "")
-        colorRoot.submenu = colorMenu
-        menu.addItem(colorRoot)
 
         menu.addItem(.separator())
 
         let clearItem = NSMenuItem(title: "Clear Canvas", action: #selector(clearCanvas), keyEquivalent: "")
         clearItem.target = self
+        clearItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
         menu.addItem(clearItem)
 
         menu.addItem(.separator())
@@ -85,9 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         loginItem.target = self
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        loginItem.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil)
         menu.addItem(loginItem)
 
         let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quitItem.image = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: nil)
         menu.addItem(quitItem)
 
         statusItem.menu = menu
