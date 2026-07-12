@@ -1,6 +1,14 @@
 import AppKit
 import ServiceManagement
 
+/// A modifier-style key that shows the overlay while held down.
+/// Only modifier keys are offered so normal typing is never swallowed.
+struct TriggerKey {
+    let label: String
+    let keyCode: UInt16
+    let flag: NSEvent.ModifierFlags
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var store: StrokeStore!
@@ -18,8 +26,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ("Blue", "#007AFF"), ("Black", "#000000"),
     ]
 
+    private let triggerKeys: [TriggerKey] = [
+        TriggerKey(label: "Fn", keyCode: 63, flag: .function),
+        TriggerKey(label: "Right \u{2318} Command", keyCode: 54, flag: .command),
+        TriggerKey(label: "Right \u{2325} Option", keyCode: 61, flag: .option),
+        TriggerKey(label: "Right \u{2303} Control", keyCode: 62, flag: .control),
+        TriggerKey(label: "Left \u{2303} Control", keyCode: 59, flag: .control),
+    ]
+    private var currentTrigger: TriggerKey!
+
     private var widthMenuItems: [NSMenuItem] = []
     private var colorMenuItems: [NSMenuItem] = []
+    private var triggerMenuItems: [NSMenuItem] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = StrokeStore()
@@ -30,17 +48,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let d = UserDefaults.standard
         let wIdx = d.object(forKey: "penWidthIndex") as? Int ?? 1
         let cIdx = d.object(forKey: "penColorIndex") as? Int ?? 0
+        let tIdx = d.object(forKey: "triggerKeyIndex") as? Int ?? 0
         drawingView.penWidth = widths[min(wIdx, widths.count - 1)].1
         drawingView.penColorHex = colors[min(cIdx, colors.count - 1)].1
+        currentTrigger = triggerKeys[min(tIdx, triggerKeys.count - 1)]
 
-        setupStatusItem(selectedWidth: wIdx, selectedColor: cIdx)
+        setupStatusItem(selectedWidth: wIdx, selectedColor: cIdx, selectedTrigger: tIdx)
         ensureAccessibility()
-        installFnMonitors()
+        installTriggerMonitors()
     }
 
     // MARK: - Menu
 
-    private func setupStatusItem(selectedWidth: Int, selectedColor: Int) {
+    private func setupStatusItem(selectedWidth: Int, selectedColor: Int, selectedTrigger: Int) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(
             systemSymbolName: "scribble.variable", accessibilityDescription: "Dooodle")
@@ -85,6 +105,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
+        let triggerMenu = NSMenu()
+        for (i, key) in triggerKeys.enumerated() {
+            let item = NSMenuItem(title: key.label, action: #selector(selectTrigger(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = i
+            item.state = i == selectedTrigger ? .on : .off
+            triggerMenu.addItem(item)
+            triggerMenuItems.append(item)
+        }
+        let triggerRoot = NSMenuItem(title: "Trigger Key", action: nil, keyEquivalent: "")
+        triggerRoot.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
+        triggerRoot.submenu = triggerMenu
+        menu.addItem(triggerRoot)
+
         let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
         loginItem.target = self
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -123,6 +157,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         drawingView.clear()
     }
 
+    @objc private func selectTrigger(_ sender: NSMenuItem) {
+        // If the overlay is showing, hide it before switching triggers.
+        drawingView.finishCurrentStroke()
+        overlay.hide()
+        currentTrigger = triggerKeys[sender.tag]
+        UserDefaults.standard.set(sender.tag, forKey: "triggerKeyIndex")
+        triggerMenuItems.forEach { $0.state = $0 == sender ? .on : .off }
+    }
+
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
         do {
             if SMAppService.mainApp.status == .enabled {
@@ -137,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Fn key
+    // MARK: - Trigger key
 
     private func ensureAccessibility() {
         let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
@@ -146,11 +189,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func installFnMonitors() {
+    private func installTriggerMonitors() {
         let handler: (NSEvent) -> Void = { [weak self] event in
-            guard event.keyCode == 63 else { return } // fn key
-            let fnDown = event.modifierFlags.contains(.function)
-            self?.fnChanged(down: fnDown)
+            guard let self, let trigger = self.currentTrigger,
+                  event.keyCode == trigger.keyCode else { return }
+            self.triggerChanged(down: event.modifierFlags.contains(trigger.flag))
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: handler) {
             monitors.append(global)
@@ -162,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let local { monitors.append(local) }
     }
 
-    private func fnChanged(down: Bool) {
+    private func triggerChanged(down: Bool) {
         if down {
             overlay.show()
         } else {
