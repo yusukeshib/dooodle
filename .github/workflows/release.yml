@@ -1,0 +1,60 @@
+name: Release
+
+# Push a version tag to build, sign, notarize, and publish a GitHub release:
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Required repository secrets (Settings ▸ Secrets and variables ▸ Actions):
+#   DEVELOPER_ID_CERT_P12   base64 of your "Developer ID Application" cert
+#                           exported as .p12  (base64 -i cert.p12 | pbcopy)
+#   DEVELOPER_ID_CERT_PASSWORD   password you set when exporting the .p12
+#   NOTARY_APPLE_ID         Apple ID email used for notarization
+#   NOTARY_TEAM_ID          10-char Team ID (e.g. 4TZUUASNPN)
+#   NOTARY_PASSWORD         app-specific password for that Apple ID
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Import Developer ID certificate
+        env:
+          CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          # Make the temp keychain visible to codesign.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Build, sign, notarize, staple
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: make release
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Dooodle.dmg
+          generate_release_notes: true

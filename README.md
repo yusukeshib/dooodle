@@ -22,20 +22,3 @@ open it, and drag Dooodle to Applications.
 2. Draw with the mouse / trackpad
 3. Release — the overlay disappears; your strokes are saved
 4. Use the ✏️ menu bar icon to change thickness, color, or the trigger key
-
-## Releasing
-
-dooodle uses the Accessibility API for global trigger-key monitoring, which the
-Mac App Store sandbox forbids — so it's distributed directly on GitHub as a
-notarized DMG instead.
-
-One-time setup and the full pipeline live in
-[`Scripts/release.sh`](Scripts/release.sh) (Developer ID certificate +
-`notarytool` keychain profile). Once set up:
-
-```sh
-make release                 # build → sign (Hardened Runtime) → notarize → staple
-
-VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.plist)
-gh release create "v$VERSION" Dooodle.dmg --title "v$VERSION" --generate-notes
-```

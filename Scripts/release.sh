@@ -26,6 +26,10 @@
 #   NOTARY_PROFILE=other ./Scripts/release.sh
 #   SIGN_IDENTITY="Developer ID Application: …" ./Scripts/release.sh
 #
+# In CI, skip the keychain profile and pass credentials directly via env:
+#   NOTARY_APPLE_ID, NOTARY_TEAM_ID, NOTARY_PASSWORD
+# (see .github/workflows/release.yml).
+#
 # Then publish:
 #   VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.plist)
 #   gh release create "v$VERSION" Dooodle.dmg --title "v$VERSION" --generate-notes
@@ -63,7 +67,7 @@ echo "▸ Verifying signature…"
 codesign --verify --strict --verbose=2 "$APP"
 
 # 2. Package the app into a compressed DMG.
-echo "▸ Building $DMG…"
+echo "▸ Building ${DMG}…"
 rm -f "$DMG"
 hdiutil create -volname Dooodle -srcfolder "$APP" -ov -format UDZO "$DMG" >/dev/null
 
@@ -71,8 +75,17 @@ hdiutil create -volname Dooodle -srcfolder "$APP" -ov -format UDZO "$DMG" >/dev/
 codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG"
 
 # 4. Submit for notarization and wait for Apple's verdict.
+#    Prefer explicit credentials (CI); fall back to the keychain profile (local).
 echo "▸ Notarizing (this can take a minute)…"
-xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+if [ -n "${NOTARY_APPLE_ID:-}" ] && [ -n "${NOTARY_TEAM_ID:-}" ] && [ -n "${NOTARY_PASSWORD:-}" ]; then
+  xcrun notarytool submit "$DMG" \
+    --apple-id "$NOTARY_APPLE_ID" \
+    --team-id  "$NOTARY_TEAM_ID" \
+    --password "$NOTARY_PASSWORD" \
+    --wait
+else
+  xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+fi
 
 # 5. Staple the ticket so Gatekeeper works offline.
 echo "▸ Stapling…"
