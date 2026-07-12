@@ -1,5 +1,8 @@
 APP = Dooodle.app
 BIN = .build/release/Dooodle
+# Stable signing identity so Accessibility (TCC) permission survives rebuilds.
+# Ad-hoc signing ("-") makes macOS treat every build as a new app.
+SIGN_IDENTITY ?= Apple Development: Yusuke Shibata (6F8N535B8W)
 
 .PHONY: all build bundle run clean
 
@@ -13,7 +16,7 @@ bundle: build
 	mkdir -p $(APP)/Contents/MacOS
 	cp Info.plist $(APP)/Contents/
 	cp $(BIN) $(APP)/Contents/MacOS/
-	codesign --force --sign - $(APP)
+	codesign --force --sign "$(SIGN_IDENTITY)" $(APP)
 
 run: bundle
 	open $(APP)
