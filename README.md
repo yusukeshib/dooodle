@@ -24,9 +24,18 @@ The three o's are the doodles. 〰️
 - **Launch at Login** toggle
 - No Dock icon — lives entirely in the menu bar
 
-## Install / Build
+## Install
 
-Requires macOS 13+ and Xcode command line tools.
+Requires macOS 13+.
+
+**Download the notarized build** from the
+[Releases page](https://github.com/yusukeshib/dooodle/releases): open
+`Dooodle.dmg` and drag Dooodle to Applications. The build is signed with a
+Developer ID and notarized by Apple, so Gatekeeper opens it without warnings.
+
+### Build from source
+
+Requires Xcode command line tools.
 
 ```sh
 git clone https://github.com/yusukeshib/dooodle
@@ -89,4 +98,21 @@ make build    # swift build -c release
 make bundle   # build + assemble + codesign Dooodle.app
 make run      # bundle + open
 make clean
+```
+
+## Releasing
+
+dooodle uses the Accessibility API for global trigger-key monitoring, which the
+Mac App Store sandbox forbids — so it's distributed directly on GitHub as a
+notarized DMG instead.
+
+One-time setup and the full pipeline live in
+[`Scripts/release.sh`](Scripts/release.sh) (Developer ID certificate +
+`notarytool` keychain profile). Once set up:
+
+```sh
+make release                 # build → sign (Hardened Runtime) → notarize → staple
+
+VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.plist)
+gh release create "v$VERSION" Dooodle.dmg --title "v$VERSION" --generate-notes
 ```
