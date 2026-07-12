@@ -61,9 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu
 
     private func setupStatusItem(selectedWidth: Int, selectedColor: Int, selectedTrigger: Int) {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: "scribble.variable", accessibilityDescription: "Dooodle")
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.image = Self.loopsIcon(active: false)
 
         let menu = NSMenu()
 
@@ -216,10 +215,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusIcon(active: down)
     }
 
-    /// Filled pencil while the overlay is active, plain scribble otherwise.
+    /// Red ink loops while the overlay is active, template (auto light/dark) otherwise.
     private func updateStatusIcon(active: Bool) {
-        statusItem.button?.image = NSImage(
-            systemSymbolName: active ? "pencil.tip.crop.circle.fill" : "scribble.variable",
-            accessibilityDescription: "Dooodle")
+        statusItem.button?.image = Self.loopsIcon(active: active)
+    }
+
+    /// The "ooo" loop scribble from the app icon, sized for the menu bar.
+    /// Same prolate cycloid as Scripts/make_icon.swift.
+    private static func loopsIcon(active: Bool) -> NSImage {
+        let size = NSSize(width: 24, height: 16)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let a: CGFloat = 46, b: CGFloat = 118, loops = 3, steps = 240
+            let t0 = -CGFloat.pi * 0.55
+            // loops form around t = 0, 2π, 4π, ... so N loops span (N-1) full periods
+            // extend past the last loop so the stroke flicks out instead of ending on the circle
+            let t1 = CGFloat(loops - 1) * 2 * .pi + CGFloat.pi * 0.85
+            let tilt: CGFloat = -6 * .pi / 180 // same hand-drawn tilt as the app icon
+            var pts: [NSPoint] = []
+            for i in 0...steps {
+                let t = t0 + (t1 - t0) * CGFloat(i) / CGFloat(steps)
+                let x = a * t - b * sin(t), y = -b * cos(t)
+                pts.append(NSPoint(
+                    x: x * cos(tilt) - y * sin(tilt),
+                    y: x * sin(tilt) + y * cos(tilt)))
+            }
+            let xs = pts.map(\.x), ys = pts.map(\.y)
+            let w = xs.max()! - xs.min()!, h = ys.max()! - ys.min()!
+            let lineWidth: CGFloat = 2.2
+            let scale = min((rect.width - lineWidth) / w, (rect.height - lineWidth) / h)
+            let cx = (xs.max()! + xs.min()!) / 2, cy = (ys.max()! + ys.min()!) / 2
+            let path = NSBezierPath()
+            for (i, p) in pts.enumerated() {
+                let pt = NSPoint(
+                    x: rect.midX + (p.x - cx) * scale,
+                    y: rect.midY + (p.y - cy) * scale)
+                i == 0 ? path.move(to: pt) : path.line(to: pt)
+            }
+            path.lineWidth = lineWidth
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            (active ? NSColor(srgbRed: 1.0, green: 0.23, blue: 0.19, alpha: 1) : .black).setStroke()
+            path.stroke()
+            return true
+        }
+        image.isTemplate = !active // template = adapts to light/dark; red stays red
+        image.accessibilityDescription = "Dooodle"
+        return image
     }
 }

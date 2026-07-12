@@ -39,7 +39,9 @@ let loops = 3
 var pts: [NSPoint] = []
 let steps = 600
 let t0 = -CGFloat.pi * 0.55
-let t1 = CGFloat(loops) * 2 * .pi + CGFloat.pi * 0.55
+// loops form around t = 0, 2π, 4π, ... so N loops span (N-1) full periods
+// extend past the last loop so the stroke flicks out instead of ending on the circle
+let t1 = CGFloat(loops - 1) * 2 * .pi + CGFloat.pi * 0.85
 for i in 0...steps {
     let t = t0 + (t1 - t0) * CGFloat(i) / CGFloat(steps)
     let x = a * t - b * sin(t)
