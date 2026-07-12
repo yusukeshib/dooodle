@@ -79,7 +79,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let widthRoot = NSMenuItem(title: "Thickness", action: nil, keyEquivalent: "")
         widthRoot.image = NSImage(systemSymbolName: "lineweight", accessibilityDescription: nil)
         widthRoot.submenu = widthMenu
-        menu.addItem(widthRoot)
+
+        let clearItem = NSMenuItem(title: "Clear Canvas", action: #selector(clearCanvas), keyEquivalent: "")
+        clearItem.target = self
+        clearItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
+        menu.addItem(clearItem)
 
         menu.addItem(.separator())
 
@@ -98,10 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let clearItem = NSMenuItem(title: "Clear Canvas", action: #selector(clearCanvas), keyEquivalent: "")
-        clearItem.target = self
-        clearItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
-        menu.addItem(clearItem)
+        menu.addItem(widthRoot)
 
         menu.addItem(.separator())
 
