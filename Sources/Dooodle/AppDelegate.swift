@@ -225,11 +225,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func selectTrigger(_ sender: NSMenuItem) {
         cancelTriggerRecording()
         // If the overlay is showing, hide it before switching triggers.
-        drawingView.finishCurrentStroke()
-        overlay.hide()
+        forceHideOverlay()
         currentTrigger = triggerKeys[sender.tag]
         UserDefaults.standard.set(sender.tag, forKey: "triggerKeyIndex")
         triggerMenuItems.forEach { $0.state = $0 == sender ? .on : .off }
+    }
+
+    /// Hide the overlay outside the normal trigger up/down flow and reset the
+    /// tracked trigger state so the next real key-down isn't swallowed.
+    private func forceHideOverlay() {
+        drawingView.finishCurrentStroke()
+        overlay.hide()
+        triggerIsDown = false
+        updateStatusIcon(active: false)
     }
 
     // MARK: - Custom trigger recording
@@ -244,8 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             cancelTriggerRecording()
             return
         }
-        drawingView.finishCurrentStroke()
-        overlay.hide()
+        forceHideOverlay()
         isRecordingTrigger = true
         customTriggerItem.title = "Hold modifier key(s)\u{2026} (Esc to cancel)"
         showRecordingPanel()
