@@ -1,7 +1,9 @@
 name: Release
 
-# Push a version tag to build, sign, notarize, and publish a GitHub release:
-#   git tag v0.1.0 && git push origin v0.1.0
+# Runs on every push to main. Compares CFBundleShortVersionString in
+# Info.plist against existing git tags — if the version was bumped (no
+# matching vX.Y.Z tag exists yet), builds, signs, notarizes, and publishes
+# a GitHub release, creating the tag as part of publishing.
 #
 # Required repository secrets (Settings ▸ Secrets and variables ▸ Actions):
 #   DEVELOPER_ID_CERT_P12   base64 of your "Developer ID Application" cert
@@ -13,7 +15,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
   contents: write
@@ -23,8 +25,37 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version bump
+        id: version
+        run: |
+          set -euo pipefail
+
+          VERSION=$(grep -A1 'CFBundleShortVersionString' Info.plist \
+            | tail -1 \
+            | sed -e 's/^[[:space:]]*<string>//' -e 's#</string>[[:space:]]*$##')
+
+          if [ -z "$VERSION" ]; then
+            echo "Could not read CFBundleShortVersionString from Info.plist" >&2
+            exit 1
+          fi
+
+          TAG="v${VERSION}"
+          echo "Info.plist version: $VERSION (tag: $TAG)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1 || git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
+            echo "Tag $TAG already exists — version not bumped, skipping release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Import Developer ID certificate
+        if: steps.version.outputs.should_release == 'true'
         env:
           CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
           CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
@@ -47,6 +78,7 @@ jobs:
           rm -f "$RUNNER_TEMP/cert.p12"
 
       - name: Build, sign, notarize, staple
+        if: steps.version.outputs.should_release == 'true'
         env:
           NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
@@ -54,7 +86,9 @@ jobs:
         run: make release
 
       - name: Publish GitHub release
+        if: steps.version.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: Dooodle.dmg
           generate_release_notes: true
