@@ -1,0 +1,48 @@
+name: Tag Release
+
+# On every merge to main, check whether CFBundleShortVersionString in
+# Info.plist was bumped compared to the existing tags. If so, create and
+# push a matching `vX.Y.Z` tag, which triggers release.yml (build, sign,
+# notarize, publish).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version and tag if new
+        run: |
+          set -euo pipefail
+
+          VERSION=$(grep -A1 'CFBundleShortVersionString' Info.plist \
+            | tail -1 \
+            | sed -e 's/^[[:space:]]*<string>//' -e 's#</string>[[:space:]]*$##')
+
+          if [ -z "$VERSION" ]; then
+            echo "Could not read CFBundleShortVersionString from Info.plist" >&2
+            exit 1
+          fi
+
+          TAG="v${VERSION}"
+          echo "Info.plist version: $VERSION (tag: $TAG)"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1 || git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
+            echo "Tag $TAG already exists — version not bumped, skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          echo "Pushed new tag $TAG"
