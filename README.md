@@ -9,8 +9,6 @@ above all windows **while you hold a trigger key** (Fn by default). Release
 the key and the overlay vanishes instantly; press it again and your strokes
 pop right back.
 
-The three o's are the doodles. 〰️
-
 ## Install
 
 macOS 13+. [**Download Dooodle.dmg**](https://github.com/yusukeshib/dooodle/releases/latest/download/Dooodle.dmg),
