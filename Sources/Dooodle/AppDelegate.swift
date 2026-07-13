@@ -1,12 +1,14 @@
 import AppKit
 import ServiceManagement
 
-/// A modifier-style key that shows the overlay while held down.
+/// A modifier-style key (or combination) that shows the overlay while held down.
 /// Only modifier keys are offered so normal typing is never swallowed.
 struct TriggerKey {
     let label: String
-    let keyCode: UInt16
-    let flag: NSEvent.ModifierFlags
+    /// Set for single-key triggers (side-specific, e.g. Right \u{2318}).
+    /// nil for multi-modifier combos (side-agnostic, matched by flags only).
+    let keyCode: UInt16?
+    let flags: NSEvent.ModifierFlags
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -27,13 +29,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ]
 
     private let triggerKeys: [TriggerKey] = [
-        TriggerKey(label: "Fn", keyCode: 63, flag: .function),
-        TriggerKey(label: "Right \u{2318} Command", keyCode: 54, flag: .command),
-        TriggerKey(label: "Right \u{2325} Option", keyCode: 61, flag: .option),
-        TriggerKey(label: "Right \u{2303} Control", keyCode: 62, flag: .control),
-        TriggerKey(label: "Left \u{2303} Control", keyCode: 59, flag: .control),
+        TriggerKey(label: "Fn", keyCode: 63, flags: .function),
+        TriggerKey(label: "Right \u{2318} Command", keyCode: 54, flags: .command),
+        TriggerKey(label: "Right \u{2325} Option", keyCode: 61, flags: .option),
+        TriggerKey(label: "Right \u{2303} Control", keyCode: 62, flags: .control),
+        TriggerKey(label: "Left \u{2303} Control", keyCode: 59, flags: .control),
     ]
     private var currentTrigger: TriggerKey!
+    private var customTrigger: TriggerKey?
+    private var customTriggerItem: NSMenuItem!
+    private var isRecordingTrigger = false
+    private var recordingMonitors: [Any] = []
+    private var recordingPanel: NSPanel?
+    private var recordingLabel: NSTextField?
+    private var recordingCloseObserver: NSObjectProtocol?
+    private var triggerIsDown = false
+
+    /// The modifier flags a trigger may consist of.
+    private static let relevantFlags: NSEvent.ModifierFlags = [.command, .option, .control, .shift, .function]
+
+    private static func comboLabel(for flags: NSEvent.ModifierFlags) -> String {
+        var parts: [String] = []
+        if flags.contains(.control) { parts.append("\u{2303} Control") }
+        if flags.contains(.option) { parts.append("\u{2325} Option") }
+        if flags.contains(.shift) { parts.append("\u{21E7} Shift") }
+        if flags.contains(.command) { parts.append("\u{2318} Command") }
+        if flags.contains(.function) { parts.append("Fn") }
+        return parts.joined(separator: " + ")
+    }
+
+    private static func flagCount(_ flags: NSEvent.ModifierFlags) -> Int {
+        [NSEvent.ModifierFlags.command, .option, .control, .shift, .function]
+            .filter { flags.contains($0) }.count
+    }
+
+    /// Every modifier key we can identify from a `flagsChanged` event.
+    /// Caps Lock is excluded on purpose (it toggles instead of being held).
+    private static let recordableModifiers: [UInt16: (label: String, flag: NSEvent.ModifierFlags)] = [
+        54: ("Right \u{2318} Command", .command),
+        55: ("Left \u{2318} Command", .command),
+        56: ("Left \u{21E7} Shift", .shift),
+        60: ("Right \u{21E7} Shift", .shift),
+        58: ("Left \u{2325} Option", .option),
+        61: ("Right \u{2325} Option", .option),
+        59: ("Left \u{2303} Control", .control),
+        62: ("Right \u{2303} Control", .control),
+        63: ("Fn", .function),
+    ]
 
     private var widthMenuItems: [NSMenuItem] = []
     private var colorMenuItems: [NSMenuItem] = []
@@ -48,10 +90,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let d = UserDefaults.standard
         let wIdx = d.object(forKey: "penWidthIndex") as? Int ?? 1
         let cIdx = d.object(forKey: "penColorIndex") as? Int ?? 0
-        let tIdx = d.object(forKey: "triggerKeyIndex") as? Int ?? 0
+        var tIdx = d.object(forKey: "triggerKeyIndex") as? Int ?? 0
         drawingView.penWidth = widths[min(wIdx, widths.count - 1)].1
         drawingView.penColorHex = colors[min(cIdx, colors.count - 1)].1
-        currentTrigger = triggerKeys[min(tIdx, triggerKeys.count - 1)]
+
+        // Restore a previously recorded custom trigger, if any.
+        let storedFlags = (d.object(forKey: "customTriggerFlags") as? Int)
+            .map { NSEvent.ModifierFlags(rawValue: UInt($0)).intersection(Self.relevantFlags) }
+        if let code = d.object(forKey: "customTriggerKeyCode") as? Int,
+           let info = Self.recordableModifiers[UInt16(code)] {
+            customTrigger = TriggerKey(label: info.label, keyCode: UInt16(code), flags: info.flag)
+        } else if let flags = storedFlags, !flags.isEmpty {
+            customTrigger = TriggerKey(label: Self.comboLabel(for: flags), keyCode: nil, flags: flags)
+        }
+        if tIdx == triggerKeys.count, let custom = customTrigger {
+            currentTrigger = custom
+        } else {
+            tIdx = min(tIdx, triggerKeys.count - 1)
+            currentTrigger = triggerKeys[tIdx]
+        }
 
         setupStatusItem(selectedWidth: wIdx, selectedColor: cIdx, selectedTrigger: tIdx)
         ensureAccessibility()
@@ -114,6 +171,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             triggerMenu.addItem(item)
             triggerMenuItems.append(item)
         }
+        triggerMenu.addItem(.separator())
+        customTriggerItem = NSMenuItem(title: Self.customItemTitle(for: customTrigger),
+                                       action: #selector(recordCustomTrigger(_:)), keyEquivalent: "")
+        customTriggerItem.target = self
+        customTriggerItem.tag = triggerKeys.count
+        customTriggerItem.state = selectedTrigger == triggerKeys.count && customTrigger != nil ? .on : .off
+        triggerMenu.addItem(customTriggerItem)
+        triggerMenuItems.append(customTriggerItem)
         let triggerRoot = NSMenuItem(title: "Trigger Key", action: nil, keyEquivalent: "")
         triggerRoot.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
         triggerRoot.submenu = triggerMenu
@@ -158,12 +223,187 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func selectTrigger(_ sender: NSMenuItem) {
+        cancelTriggerRecording()
         // If the overlay is showing, hide it before switching triggers.
         drawingView.finishCurrentStroke()
         overlay.hide()
         currentTrigger = triggerKeys[sender.tag]
         UserDefaults.standard.set(sender.tag, forKey: "triggerKeyIndex")
         triggerMenuItems.forEach { $0.state = $0 == sender ? .on : .off }
+    }
+
+    // MARK: - Custom trigger recording
+
+    private static func customItemTitle(for trigger: TriggerKey?) -> String {
+        if let trigger { return "Custom: \(trigger.label)" }
+        return "Custom\u{2026}"
+    }
+
+    @objc private func recordCustomTrigger(_ sender: NSMenuItem) {
+        if isRecordingTrigger {
+            cancelTriggerRecording()
+            return
+        }
+        drawingView.finishCurrentStroke()
+        overlay.hide()
+        isRecordingTrigger = true
+        customTriggerItem.title = "Hold modifier key(s)\u{2026} (Esc to cancel)"
+        showRecordingPanel()
+
+        // Accumulate every modifier held during the gesture; commit on full release.
+        var recordedFlags: NSEvent.ModifierFlags = []
+        var lastKeyCode: UInt16?
+        let capture: (NSEvent) -> Void = { [weak self] event in
+            guard let self, self.isRecordingTrigger else { return }
+            let pressed = event.modifierFlags.intersection(Self.relevantFlags)
+            if pressed.isEmpty {
+                // Everything released — commit what was held.
+                guard !recordedFlags.isEmpty else { return }
+                let trigger: TriggerKey
+                if Self.flagCount(recordedFlags) == 1, let code = lastKeyCode,
+                   let info = Self.recordableModifiers[code] {
+                    // Single modifier: keep side-specific precision (e.g. Right \u{2318}).
+                    trigger = TriggerKey(label: info.label, keyCode: code, flags: info.flag)
+                } else {
+                    trigger = TriggerKey(label: Self.comboLabel(for: recordedFlags),
+                                         keyCode: nil, flags: recordedFlags)
+                }
+                self.finishTriggerRecording(trigger)
+            } else {
+                recordedFlags.formUnion(pressed)
+                if Self.recordableModifiers[event.keyCode] != nil { lastKeyCode = event.keyCode }
+                self.recordingLabel?.stringValue = Self.comboLabel(for: recordedFlags)
+            }
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: capture) {
+            recordingMonitors.append(global)
+        }
+        let localFlags = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            capture(event)
+            return event
+        }
+        if let localFlags { recordingMonitors.append(localFlags) }
+        // Esc cancels recording (only reachable via a local keyDown monitor).
+        let localKey = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // Esc
+                self?.cancelTriggerRecording()
+                return nil
+            }
+            return event
+        }
+        if let localKey { recordingMonitors.append(localKey) }
+    }
+
+    private func finishTriggerRecording(_ trigger: TriggerKey) {
+        stopRecordingMonitors()
+        isRecordingTrigger = false
+        customTrigger = trigger
+        currentTrigger = trigger
+        let d = UserDefaults.standard
+        d.set(Int(trigger.flags.rawValue), forKey: "customTriggerFlags")
+        if let code = trigger.keyCode {
+            d.set(Int(code), forKey: "customTriggerKeyCode")
+        } else {
+            d.removeObject(forKey: "customTriggerKeyCode")
+        }
+        d.set(triggerKeys.count, forKey: "triggerKeyIndex")
+        customTriggerItem.title = Self.customItemTitle(for: trigger)
+        triggerMenuItems.forEach { $0.state = $0 == customTriggerItem ? .on : .off }
+        // Show what was captured, then dismiss the panel shortly after.
+        recordingLabel?.stringValue = "\u{2713} \(trigger.label)"
+        recordingLabel?.textColor = .systemGreen
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.closeRecordingPanel()
+        }
+    }
+
+    private func cancelTriggerRecording() {
+        guard isRecordingTrigger else { return }
+        stopRecordingMonitors()
+        isRecordingTrigger = false
+        customTriggerItem.title = Self.customItemTitle(for: customTrigger)
+        closeRecordingPanel()
+    }
+
+    // MARK: Recording panel UI
+
+    private func showRecordingPanel() {
+        closeRecordingPanel()
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 170),
+            styleMask: [.titled, .closable],
+            backing: .buffered, defer: false)
+        panel.title = "Record Trigger Key"
+        panel.level = .floating
+        panel.isReleasedWhenClosed = false
+
+        let label = NSTextField(labelWithString: "Hold modifier key(s)\u{2026}")
+        label.font = .systemFont(ofSize: 18, weight: .semibold)
+        label.alignment = .center
+
+        let hint = NSTextField(labelWithString: "\u{2318} \u{2325} \u{2303} \u{21E7} Fn — combos OK (e.g. \u{2318}+\u{2325}) — release to set")
+        hint.font = .systemFont(ofSize: 12)
+        hint.textColor = .secondaryLabelColor
+        hint.alignment = .center
+
+        let cancelHint = NSTextField(labelWithString: "Esc to cancel")
+        cancelHint.font = .systemFont(ofSize: 11)
+        cancelHint.textColor = .tertiaryLabelColor
+        cancelHint.alignment = .center
+
+        let warning = NSTextField(
+            wrappingLabelWithString: "Tip: keys you use for shortcuts (e.g. Left \u{2318}) will pop the overlay every time you press them.")
+        warning.font = .systemFont(ofSize: 11)
+        warning.textColor = .secondaryLabelColor
+        warning.alignment = .center
+        warning.preferredMaxLayoutWidth = 300
+
+        let stack = NSStackView(views: [label, hint, warning, cancelHint])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let content = NSView()
+        content.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+        ])
+        panel.contentView = content
+
+        // Closing the panel with its close button cancels the recording.
+        recordingCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: panel, queue: .main
+        ) { [weak self] _ in
+            self?.cancelTriggerRecording()
+        }
+
+        recordingPanel = panel
+        recordingLabel = label
+        NSApp.activate(ignoringOtherApps: true)
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func closeRecordingPanel() {
+        guard let panel = recordingPanel else { return }
+        recordingPanel = nil
+        recordingLabel = nil
+        if let observer = recordingCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+            recordingCloseObserver = nil
+        }
+        panel.orderOut(nil)
+        // Give focus back to whatever app the user was in — otherwise
+        // keystrokes go nowhere while Dooodle stays active with no window.
+        NSApp.hide(nil)
+    }
+
+    private func stopRecordingMonitors() {
+        recordingMonitors.forEach { NSEvent.removeMonitor($0) }
+        recordingMonitors.removeAll()
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
@@ -191,9 +431,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installTriggerMonitors() {
         let handler: (NSEvent) -> Void = { [weak self] event in
-            guard let self, let trigger = self.currentTrigger,
-                  event.keyCode == trigger.keyCode else { return }
-            self.triggerChanged(down: event.modifierFlags.contains(trigger.flag))
+            guard let self, !self.isRecordingTrigger, let trigger = self.currentTrigger else { return }
+            let down: Bool
+            if let code = trigger.keyCode {
+                // Single-key trigger: side-specific match on the exact key.
+                guard event.keyCode == code else { return }
+                down = event.modifierFlags.contains(trigger.flags)
+            } else {
+                // Combo trigger: all recorded modifiers must be held (any side).
+                let pressed = event.modifierFlags.intersection(Self.relevantFlags)
+                down = pressed.isSuperset(of: trigger.flags)
+            }
+            guard down != self.triggerIsDown else { return }
+            self.triggerIsDown = down
+            self.triggerChanged(down: down)
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: handler) {
             monitors.append(global)
