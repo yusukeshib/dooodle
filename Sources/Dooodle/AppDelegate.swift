@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem(selectedWidth: Int, selectedColor: Int, selectedTrigger: Int) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = Self.loopsIcon(active: false)
+        statusItem.button?.image = Self.loopsIcon(tint: nil)
 
         let menu = NSMenu()
 
@@ -215,14 +215,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusIcon(active: down)
     }
 
-    /// Red ink loops while the overlay is active, template (auto light/dark) otherwise.
+    /// Idle: a calm monochrome scribble that adapts to light/dark (pen "capped").
+    /// Active: the same scribble inked in the *current pen color* with a fresh
+    /// ink-tip dot, so the menu bar previews exactly what you're drawing with.
     private func updateStatusIcon(active: Bool) {
-        statusItem.button?.image = Self.loopsIcon(active: active)
+        let tint = active ? NSColor(hex: drawingView.penColorHex) : nil
+        statusItem.button?.image = Self.loopsIcon(tint: tint)
     }
 
     /// The "ooo" loop scribble from the app icon, sized for the menu bar.
     /// Same prolate cycloid as Scripts/make_icon.swift.
-    private static func loopsIcon(active: Bool) -> NSImage {
+    /// `tint == nil` renders a template (idle); a non-nil tint inks it live.
+    private static func loopsIcon(tint: NSColor?) -> NSImage {
+        let active = tint != nil
         let size = NSSize(width: 24, height: 16)
         let image = NSImage(size: size, flipped: false) { rect in
             let a: CGFloat = 46, b: CGFloat = 118, loops = 3, steps = 240
@@ -241,25 +246,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let xs = pts.map(\.x), ys = pts.map(\.y)
             let w = xs.max()! - xs.min()!, h = ys.max()! - ys.min()!
-            let lineWidth: CGFloat = 2.2
-            let scale = min((rect.width - lineWidth) / w, (rect.height - lineWidth) / h)
+            // Slightly bolder while inking so "live" reads at a glance.
+            let lineWidth: CGFloat = active ? 2.6 : 2.1
+            let tipR: CGFloat = 2.0 // ink-tip dot radius (active only)
+            let margin = max(lineWidth, active ? tipR * 2 : lineWidth)
+            let scale = min((rect.width - margin) / w, (rect.height - margin) / h)
             let cx = (xs.max()! + xs.min()!) / 2, cy = (ys.max()! + ys.min()!) / 2
+            let place = { (p: NSPoint) -> NSPoint in
+                NSPoint(x: rect.midX + (p.x - cx) * scale,
+                        y: rect.midY + (p.y - cy) * scale)
+            }
             let path = NSBezierPath()
             for (i, p) in pts.enumerated() {
-                let pt = NSPoint(
-                    x: rect.midX + (p.x - cx) * scale,
-                    y: rect.midY + (p.y - cy) * scale)
+                let pt = place(p)
                 i == 0 ? path.move(to: pt) : path.line(to: pt)
             }
             path.lineWidth = lineWidth
             path.lineCapStyle = .round
             path.lineJoinStyle = .round
-            (active ? NSColor(srgbRed: 1.0, green: 0.23, blue: 0.19, alpha: 1) : .black).setStroke()
+            (tint ?? .black).setStroke()
             path.stroke()
+            // Fresh ink tip at the end of the flick — signals "now writing".
+            if let tint, let last = pts.last {
+                let tip = place(last)
+                tint.setFill()
+                NSBezierPath(ovalIn: NSRect(x: tip.x - tipR, y: tip.y - tipR,
+                                            width: tipR * 2, height: tipR * 2)).fill()
+            }
             return true
         }
-        image.isTemplate = !active // template = adapts to light/dark; red stays red
-        image.accessibilityDescription = "Dooodle"
+        image.isTemplate = !active // template = adapts to light/dark; inked color stays
+        image.accessibilityDescription = active ? "Dooodle (drawing)" : "Dooodle"
         return image
     }
 }
